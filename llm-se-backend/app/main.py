@@ -18,7 +18,10 @@ app = FastAPI(title="Secure Enterprise LLM Platform")
 
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["http://localhost:5173"],
+    allow_origins=[
+        "http://localhost:5173",
+        "https://senitel-rbac-secured-rag-system-53vjrtyg9-atharva1601s-projects.vercel.app",
+    ],
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
@@ -29,7 +32,6 @@ app.include_router(auth_me_router)
 app.include_router(admin_upload_router)
 app.include_router(admin_ingest_router)
 app.include_router(admin_documents_router)
-app.include_router(admin_ingest_router)
 app.include_router(admin_users_router)
 
 
