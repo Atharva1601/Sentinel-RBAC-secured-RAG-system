@@ -1,6 +1,4 @@
-// src/api/auth.ts
-
-const API_BASE = "http://127.0.0.1:8000";
+const API_BASE = import.meta.env.VITE_API_BASE_URL;
 
 export async function validateLogin(username: string) {
   const res = await fetch(`${API_BASE}/query`, {
