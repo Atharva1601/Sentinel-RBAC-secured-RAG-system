@@ -94,7 +94,6 @@ Authorization is enforced **before retrieval**, ensuring unauthorized content is
 ├── samples/        # gitignored
 ├── chroma/         # gitignored
 ├── .env            # gitignored
-└── README.md
 
 ---
 
