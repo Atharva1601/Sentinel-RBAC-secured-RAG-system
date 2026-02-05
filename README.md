@@ -74,7 +74,7 @@ Authorization is enforced **before retrieval**, ensuring unauthorized content is
 ---
 
 ## 📂 Project Structure
-
+```text
 .
 ├── backend/
 │   ├── app/
@@ -82,18 +82,19 @@ Authorization is enforced **before retrieval**, ensuring unauthorized content is
 │   │   ├── embeddings/
 │   │   ├── retrieval/
 │   │   ├── routes/
-│   │   └── models/
-│   └── main.py
+│   │   ├── models/
+│   │   └── main.py
 │
 ├── frontend/
-│   ├── src/
-│   │   ├── pages/
-│   │   ├── context/
-│   │   └── components/
+│   └── src/
+│       ├── pages/
+│       ├── context/
+│       └── components/
 │
-├── samples/        # gitignored
-├── chroma/         # gitignored
-├── .env            # gitignored
+├── samples/   # gitignored
+├── chroma/    # gitignored
+└── .env       # gitignored
+```
 
 ---
 
