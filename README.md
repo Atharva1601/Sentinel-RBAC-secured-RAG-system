@@ -118,8 +118,6 @@ Authorization is enforced **before retrieval**, ensuring unauthorized content is
 ## 🚧 Future Improvements
 
 - OCR support
-- Audit logs
 - Hybrid search
-- Multi-tenant support
 - Permission editor
 
