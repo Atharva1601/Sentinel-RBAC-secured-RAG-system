@@ -2,8 +2,9 @@ from dotenv import load_dotenv
 
 load_dotenv()
 
-from fastapi import FastAPI
+from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import Response
 
 from app.api.query import router as query_router
 from app.auth.me import router as auth_me_router
@@ -15,21 +16,28 @@ from app.admin.users import router as admin_users_router
 app = FastAPI(title="Secure Enterprise LLM Platform")
 
 # =========================
-# CORS CONFIGURATION
+# CORS (HARDENED)
 # =========================
 app.add_middleware(
     CORSMiddleware,
-    # Production + local dev
     allow_origins=[
         "http://localhost:5173",
         "https://senitel-rbac-secured-rag-system.vercel.app",
     ],
-    # Allow ALL Vercel preview deployments
     allow_origin_regex=r"https://senitel-rbac-secured-rag-system-.*\.vercel\.app",
     allow_credentials=True,
-    allow_methods=["*"],  # POST, GET, OPTIONS, etc.
-    allow_headers=["*"],  # Authorization, Content-Type, etc.
+    allow_methods=["GET", "POST", "OPTIONS"],
+    allow_headers=["Authorization", "Content-Type"],
 )
+
+
+# =========================
+# FORCE PREFLIGHT HANDLING
+# =========================
+@app.options("/{path:path}")
+async def preflight_handler(path: str, request: Request):
+    return Response(status_code=204)
+
 
 # =========================
 # ROUTERS
