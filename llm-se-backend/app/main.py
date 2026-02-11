@@ -5,29 +5,36 @@ load_dotenv()
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
-from app.api.query import router
+from app.api.query import router as query_router
 from app.auth.me import router as auth_me_router
 from app.admin.ingest import router as admin_ingest_router
 from app.admin.documents import router as admin_documents_router
 from app.admin.upload import router as admin_upload_router
-from app.admin.ingest import router as admin_ingest_router
 from app.admin.users import router as admin_users_router
 
 app = FastAPI(title="Secure Enterprise LLM Platform")
 
-
+# =========================
+# CORS CONFIGURATION
+# =========================
 app.add_middleware(
     CORSMiddleware,
+    # Production + local dev
     allow_origins=[
         "http://localhost:5173",
-        "https://senitel-rbac-secured-rag-system-53vjrtyg9-atharva1601s-projects.vercel.app",
+        "https://senitel-rbac-secured-rag-system.vercel.app",
     ],
+    # Allow ALL Vercel preview deployments
+    allow_origin_regex=r"https://senitel-rbac-secured-rag-system-.*\.vercel\.app",
     allow_credentials=True,
-    allow_methods=["*"],
-    allow_headers=["*"],
+    allow_methods=["*"],  # POST, GET, OPTIONS, etc.
+    allow_headers=["*"],  # Authorization, Content-Type, etc.
 )
 
-app.include_router(router)
+# =========================
+# ROUTERS
+# =========================
+app.include_router(query_router)
 app.include_router(auth_me_router)
 app.include_router(admin_upload_router)
 app.include_router(admin_ingest_router)
@@ -35,6 +42,9 @@ app.include_router(admin_documents_router)
 app.include_router(admin_users_router)
 
 
+# =========================
+# HEALTH CHECK
+# =========================
 @app.get("/health")
 def health():
     return {"status": "ok"}
