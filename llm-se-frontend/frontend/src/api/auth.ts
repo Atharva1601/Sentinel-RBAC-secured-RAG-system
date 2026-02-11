@@ -1,4 +1,6 @@
-const API_BASE = import.meta.env.VITE_API_BASE_URL;
+// src/api/auth.ts
+
+import { API_BASE } from "./client";
 
 export async function validateLogin(username: string) {
   const res = await fetch(`${API_BASE}/query`, {

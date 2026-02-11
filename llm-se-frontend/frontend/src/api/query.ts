@@ -1,3 +1,5 @@
+// src/api/query.ts
+
 import { API_BASE, authHeaders } from "./client";
 
 export async function sendQuery(query: string) {
@@ -9,6 +11,10 @@ export async function sendQuery(query: string) {
       query,
     }),
   });
+
+  if (!res.ok) {
+    throw new Error("Query request failed");
+  }
 
   return res.json();
 }
