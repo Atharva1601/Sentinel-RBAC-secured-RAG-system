@@ -32,14 +32,6 @@ app.add_middleware(
 
 
 # =========================
-# FORCE PREFLIGHT HANDLING
-# =========================
-@app.options("/{path:path}")
-async def preflight_handler(path: str, request: Request):
-    return Response(status_code=204)
-
-
-# =========================
 # ROUTERS
 # =========================
 app.include_router(query_router)
