@@ -12,6 +12,9 @@ from app.admin.ingest import router as admin_ingest_router
 from app.admin.documents import router as admin_documents_router
 from app.admin.upload import router as admin_upload_router
 from app.admin.users import router as admin_users_router
+from app.db.database import engine, Base
+from app.db.seed import seed_users_if_empty
+
 
 app = FastAPI(title="Secure Enterprise LLM Platform")
 
@@ -47,3 +50,9 @@ app.include_router(admin_users_router)
 @app.get("/health")
 def health():
     return {"status": "ok"}
+
+
+@app.on_event("startup")
+def on_startup():
+    Base.metadata.create_all(bind=engine)
+    seed_users_if_empty()
