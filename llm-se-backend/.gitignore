@@ -16,3 +16,7 @@ node_modules/
 dist/
 build/
 .vite/
+# Environment variables
+.env
+.env.local
+.env.*.local
