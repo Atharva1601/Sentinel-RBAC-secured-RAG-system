@@ -1,3 +1,4 @@
+import { API_BASE } from "../../api/client";
 import { useState, useEffect, useCallback } from "react";
 import type { FormEvent } from "react";
 import { useNavigate } from "react-router-dom";
@@ -17,11 +18,6 @@ interface CreateUserForm {
   clearance_level: number;
   department: string;
 }
-
-const API_BASE =
-  import.meta.env.VITE_API_BASE_URL ||
-  "https://sentinel-rag-backend.onrender.com";
-
 
 export default function AdminUsers() {
   const { user } = useAuth();

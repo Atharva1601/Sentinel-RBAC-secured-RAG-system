@@ -1,3 +1,4 @@
+import { API_BASE } from "../../api/client";
 import { useState, useEffect, useCallback } from "react";
 import { useNavigate } from "react-router-dom";
 
@@ -14,10 +15,6 @@ interface IngestForm {
   min_role_level: number;
   min_clearance_level: number;
 }
-
-const API_BASE =
-  import.meta.env.VITE_API_BASE_URL ||
-  "https://sentinel-rag-backend.onrender.com";
 
 
 export default function AdminDocs() {

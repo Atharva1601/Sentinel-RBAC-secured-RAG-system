@@ -1,11 +1,10 @@
+import { API_BASE } from "../api/client";
+
 import { useState } from "react";
 import type { FormEvent } from "react";
 import { useNavigate } from "react-router-dom";
 import { useAuth } from "../context/AuthContext";
 
-const API_BASE =
-  import.meta.env.VITE_API_BASE_URL ||
-  "https://sentinel-rag-backend.onrender.com";
 
 
 export default function Login() {
