@@ -2,6 +2,8 @@ import { useState, useRef, useEffect } from "react";
 import type { KeyboardEvent, FormEvent } from "react";
 import ReactMarkdown from "react-markdown";
 
+import { API_BASE, authHeaders } from "../api/client";
+
 interface Source {
   source: string;
   similarity: number;
@@ -72,19 +74,18 @@ export default function ChatBox() {
     setIsLoading(true);
 
     try {
-      const res = await fetch("http://127.0.0.1:8000/query", {
+      const res = await fetch(`${API_BASE}/query`, {
         method: "POST",
-        headers: {
-          Authorization: `Bearer ${token}`,
-          "Content-Type": "application/json",
-        },
+        headers: authHeaders(),
         body: JSON.stringify({
           request_id: requestId,
           query,
         }),
       });
 
-      if (!res.ok) throw new Error();
+      if (!res.ok) {
+        throw new Error("Query failed");
+      }
 
       const data: QueryResponse = await res.json();
 
@@ -98,7 +99,6 @@ export default function ChatBox() {
               id: generateRequestId(),
               role: "assistant",
               content: data.data.answer,
-              // keep only FIRST source, ignore similarity
               sources: data.data.sources?.slice(0, 1),
             },
           ];
@@ -161,10 +161,10 @@ export default function ChatBox() {
               }}
             >
               {m.role === "assistant" ? (
-  <ReactMarkdown>{m.content}</ReactMarkdown>
-) : (
-  <div>{m.content}</div>
-)}
+                <ReactMarkdown>{m.content}</ReactMarkdown>
+              ) : (
+                <div>{m.content}</div>
+              )}
 
               {m.sources && m.sources.length > 0 && (
                 <div style={styles.source}>
@@ -204,8 +204,7 @@ const styles: Record<string, React.CSSProperties> = {
     height: "100%",
     display: "flex",
     flexDirection: "column",
-    background:
-      "linear-gradient(180deg, #0f1115 0%, #151922 100%)",
+    background: "linear-gradient(180deg, #0f1115 0%, #151922 100%)",
     fontFamily:
       "-apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif",
     letterSpacing: "0.2px",
