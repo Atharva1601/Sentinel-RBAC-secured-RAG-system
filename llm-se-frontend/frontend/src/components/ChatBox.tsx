@@ -16,25 +16,12 @@ interface Message {
   sources?: Source[];
 }
 
-interface AnswerResponse {
-  type: "answer";
-  data: {
-    answer: string;
-    sources: Source[];
-  };
-}
-
-interface NoInfoResponse {
-  type: "no_info";
-  reason: string;
-}
-
-type QueryResponse = AnswerResponse | NoInfoResponse;
 
 export default function ChatBox() {
   const [messages, setMessages] = useState<Message[]>([]);
   const [input, setInput] = useState("");
   const [isLoading, setIsLoading] = useState(false);
+  const [streamingMsgId, setStreamingMsgId] = useState<string | null>(null);
 
   const messagesEndRef = useRef<HTMLDivElement>(null);
 
@@ -74,7 +61,7 @@ export default function ChatBox() {
     setIsLoading(true);
 
     try {
-      const res = await fetch(`${API_BASE}/query`, {
+      const res = await fetch(`${API_BASE}/query/stream`, {
         method: "POST",
         headers: authHeaders(),
         body: JSON.stringify({
@@ -87,35 +74,98 @@ export default function ChatBox() {
         throw new Error("Query failed");
       }
 
-      const data: QueryResponse = await res.json();
+      const reader = res.body?.getReader();
+      const decoder = new TextDecoder();
+      let buffer = "";
 
-      setMessages((prev) => {
-        const cleaned = prev.filter((m) => m.id !== requestId);
+      if (reader) {
+        // Remove "Thinking..." placeholder
+        setMessages((prev) => prev.filter((m) => m.id !== requestId));
+        setStreamingMsgId(requestId);
 
-        if (data.type === "answer") {
-          return [
-            ...cleaned,
-            {
-              id: generateRequestId(),
-              role: "assistant",
-              content: data.data.answer,
-              sources: data.data.sources?.slice(0, 1),
-            },
-          ];
+        let assistantMessage: Message = {
+          id: requestId,
+          role: "assistant",
+          content: "",
+          sources: [],
+        };
+
+        let tokensSinceRender = 0;
+
+        while (true) {
+          const { value, done } = await reader.read();
+          if (done) break;
+
+          buffer += decoder.decode(value, { stream: true });
+          const lines = buffer.split("\n");
+          buffer = lines.pop() || "";
+
+          for (const line of lines) {
+            const cleanLine = line.trim();
+            if (!cleanLine) continue;
+
+            if (cleanLine.startsWith("data: ")) {
+              const dataStr = cleanLine.slice(6);
+              if (dataStr === "[DONE]") {
+                continue;
+              }
+
+              try {
+                const parsed = JSON.parse(dataStr);
+                if (parsed.type === "metadata") {
+                  assistantMessage.sources = parsed.sources?.slice(0, 1);
+                  setMessages((prev) => {
+                    const other = prev.filter((m) => m.id !== requestId);
+                    return [...other, { ...assistantMessage }];
+                  });
+                } else if (parsed.type === "token") {
+                  assistantMessage.content += parsed.content;
+                  tokensSinceRender++;
+                  // Yield every 2 tokens so React can re-render progressively
+                  if (tokensSinceRender >= 2) {
+                    setMessages((prev) => {
+                      const other = prev.filter((m) => m.id !== requestId);
+                      return [...other, { ...assistantMessage }];
+                    });
+                    tokensSinceRender = 0;
+                    await new Promise((r) => setTimeout(r, 16));
+                  }
+                } else if (parsed.type === "no_info") {
+                  setMessages((prev) => {
+                    const other = prev.filter((m) => m.id !== requestId);
+                    return [
+                      ...other,
+                      {
+                        id: generateRequestId(),
+                        role: "system",
+                        content: "No relevant information found.",
+                      },
+                    ];
+                  });
+                }
+              } catch (err) {
+                console.error("Error parsing SSE line:", err);
+              }
+            }
+          }
+
+          // Flush any remaining buffered tokens after this chunk
+          if (tokensSinceRender > 0) {
+            setMessages((prev) => {
+              const other = prev.filter((m) => m.id !== requestId);
+              return [...other, { ...assistantMessage }];
+            });
+            tokensSinceRender = 0;
+          }
         }
 
-        return [
-          ...cleaned,
-          {
-            id: generateRequestId(),
-            role: "system",
-            content: "No relevant information found.",
-          },
-        ];
-      });
-    } catch {
+        setStreamingMsgId(null);
+      }
+    } catch (err) {
+      console.error(err);
+      setStreamingMsgId(null);
       setMessages((prev) => [
-        ...prev.filter((m) => m.content !== "Thinking…"),
+        ...prev.filter((m) => m.id !== requestId),
         {
           id: generateRequestId(),
           role: "system",
@@ -161,7 +211,12 @@ export default function ChatBox() {
               }}
             >
               {m.role === "assistant" ? (
-                <ReactMarkdown>{m.content}</ReactMarkdown>
+                <>
+                  <ReactMarkdown>{m.content}</ReactMarkdown>
+                  {streamingMsgId === m.id && (
+                    <span className="streaming-cursor">▊</span>
+                  )}
+                </>
               ) : (
                 <div>{m.content}</div>
               )}

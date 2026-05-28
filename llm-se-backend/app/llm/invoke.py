@@ -1,13 +1,87 @@
-import os
-from typing import List, Dict
+from __future__ import annotations
 
-from groq import Groq
+import asyncio
+from functools import lru_cache
+from typing import Dict, AsyncGenerator, List
+
+import groq
+from groq import AsyncGroq
+
+from app.config import settings
+
+import structlog
+
+log = structlog.get_logger()
 
 
-MODEL_NAME = "llama-3.1-8b-instant"
-MAX_TOKENS = 512
-TEMPERATURE = 0.0
+async def call_with_retry(
+    client_fn,
+    *args,
+    max_retries: int = 5,
+    initial_delay: float = 2.0,
+    **kwargs,
+):
+    """
+    Call a Groq API function with automatic retry and exponential backoff
+    when hitting rate limits (RateLimitError).
 
+    Includes immediate model fallback if daily token/request quotas are exhausted.
+    """
+    delay = initial_delay
+    for attempt in range(max_retries):
+        try:
+            return await client_fn(*args, **kwargs)
+        except groq.RateLimitError as e:
+            msg = str(e).lower()
+
+            # If hit by daily token limit (TPD) or daily request limit (RPD), fall back to 8B model
+            if "tokens per day" in msg or "tpd" in msg or "daily" in msg:
+                if "model" in kwargs and kwargs["model"] == settings.LLM_MODEL_NAME:
+                    fallback_model = "llama-3.1-8b-instant"
+                    log.warning(
+                        "groq_daily_rate_limit_fallback",
+                        model=kwargs["model"],
+                        fallback_model=fallback_model,
+                        error=str(e),
+                    )
+                    kwargs["model"] = fallback_model
+                    # Try execution immediately with fallback model
+                    try:
+                        return await client_fn(*args, **kwargs)
+                    except Exception as fallback_err:
+                        log.error("groq_fallback_failed", error=str(fallback_err))
+                        raise e from fallback_err
+
+            if attempt == max_retries - 1:
+                raise
+            
+            # Default wait time
+            wait_time = delay
+            
+            # Parse wait time from message if possible (e.g. "Please try again in 13.09s.")
+            msg_str = str(e)
+            if "try again in" in msg_str:
+                try:
+                    parts = msg_str.split("try again in")
+                    if len(parts) > 1:
+                        seconds_str = parts[1].strip().split("s")[0].strip()
+                        wait_time = float(seconds_str) + 0.5
+                except Exception:
+                    pass
+            
+            log.warning("groq_rate_limit_exceeded", attempt=attempt, wait_time=wait_time, error=str(e))
+            await asyncio.sleep(wait_time)
+            delay *= 2
+
+
+# Module-level singleton Groq client
+@lru_cache(maxsize=1)
+def _get_groq_client() -> AsyncGroq:
+    """Return the singleton AsyncGroq client."""
+    return AsyncGroq(api_key=settings.GROQ_API_KEY)
+
+
+# System prompts (unchanged from original)
 
 SYSTEM_PROMPT = """
 You are an enterprise knowledge assistant.
@@ -70,7 +144,7 @@ Tone:
 PROMPT_SIMILARITY_THRESHOLD = 0.55
 
 
-def select_documents_for_prompt(documents, max_docs=3):
+def select_documents_for_prompt(documents, max_docs=None):
     """
     Select top-N most relevant documents for LLM grounding.
     Do NOT over-filter — allow enough context for explanation.
@@ -79,9 +153,12 @@ def select_documents_for_prompt(documents, max_docs=3):
     if not documents:
         return []
 
+    if max_docs is None:
+        max_docs = settings.TOP_K_RERANK
+
     sorted_docs = sorted(
         documents,
-        key=lambda d: d["similarity"],
+        key=lambda d: d.get("rerank_score", d.get("similarity", 0)),
         reverse=True,
     )
 
@@ -91,12 +168,24 @@ def select_documents_for_prompt(documents, max_docs=3):
 def build_user_prompt(query: str, documents: List[Dict]) -> str:
     """
     Build a grounded user prompt using retrieved documents.
+
+    Includes page citations in evidence headers when available:
+    [Evidence 1 -- policy.pdf, Page 4]
     """
 
     context_blocks = []
 
     for i, doc in enumerate(documents, start=1):
-        context_blocks.append(f"[Evidence {i}]\n{doc['content']}")
+        meta = doc.get("metadata", {})
+        source = meta.get("source", "unknown")
+        page_number = meta.get("page_number")
+
+        if page_number:
+            header = f"[Evidence {i} -- {source}, Page {page_number}]"
+        else:
+            header = f"[Evidence {i} -- {source}]"
+
+        context_blocks.append(f"{header}\n{doc['content']}")
 
     context_text = "\n\n".join(context_blocks)
 
@@ -109,16 +198,15 @@ Question:
 """
 
 
-def generate_answer(
+async def generate_answer(
     query: str,
     documents: List[Dict],
     soft: bool = False,
 ) -> str:
     """
-    Generate a grounded answer using Groq LLM.
+    Generate a grounded answer using Groq LLM (blocking/async).
     """
-
-    client = Groq(api_key=os.getenv("GROQ_API_KEY"))
+    client = _get_groq_client()
 
     system_prompt = SYSTEM_PROMPT
     if soft:
@@ -135,11 +223,55 @@ def generate_answer(
         },
     ]
 
-    response = client.chat.completions.create(
-        model=MODEL_NAME,
+    response = await call_with_retry(
+        client.chat.completions.create,
+        model=settings.LLM_MODEL_NAME,
         messages=messages,
-        temperature=TEMPERATURE,
-        max_tokens=MAX_TOKENS,
+        temperature=settings.LLM_TEMPERATURE,
+        max_tokens=settings.LLM_MAX_TOKENS,
     )
 
     return response.choices[0].message.content.strip()
+
+
+async def generate_answer_stream(
+    query: str,
+    documents: List[Dict],
+    soft: bool = False,
+) -> AsyncGenerator[str, None]:
+    """
+    Generate a grounded answer using Groq LLM (streaming).
+
+    Yields text chunks as they arrive from the Groq API.
+    Used by the SSE streaming endpoint.
+    """
+    client = _get_groq_client()
+
+    system_prompt = SYSTEM_PROMPT
+    if soft:
+        system_prompt = SYSTEM_PROMPT + "\n" + SOFT_MODE_NOTE
+
+    messages = [
+        {
+            "role": "system",
+            "content": system_prompt.strip(),
+        },
+        {
+            "role": "user",
+            "content": build_user_prompt(query, documents),
+        },
+    ]
+
+    stream = await call_with_retry(
+        client.chat.completions.create,
+        model=settings.LLM_MODEL_NAME,
+        messages=messages,
+        temperature=settings.LLM_TEMPERATURE,
+        max_tokens=settings.LLM_MAX_TOKENS,
+        stream=True,
+    )
+
+    async for chunk in stream:
+        delta = chunk.choices[0].delta
+        if delta and delta.content:
+            yield delta.content

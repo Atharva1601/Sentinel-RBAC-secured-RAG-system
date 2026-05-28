@@ -1,7 +1,10 @@
 from sqlalchemy.orm import Session
 
 from app.db.database import SessionLocal
-from app.db.models import User
+from app.db.models import User, Department
+
+# Default system departments
+DEPARTMENTS = ["shared", "AI", "GenAI", "ML", "DL"]
 
 # Default system users
 USERS = [
@@ -35,15 +38,20 @@ USERS = [
 def seed_users_if_empty():
     db: Session = SessionLocal()
     try:
-        # If any user exists, assume DB already seeded
-        if db.query(User).first():
-            return
+        # Seed departments first
+        if not db.query(Department).first():
+            for dept_name in DEPARTMENTS:
+                db.add(Department(name=dept_name))
+            db.commit()
+            print("Default departments seeded successfully.")
 
-        for user_data in USERS:
-            db.add(User(**user_data))
-
-        db.commit()
-        print("✅ Default users seeded")
+        # Seed users if any user doesn't exist
+        if not db.query(User).first():
+            for user_data in USERS:
+                db.add(User(**user_data))
+            db.commit()
+            print("Default users seeded successfully.")
 
     finally:
         db.close()
+

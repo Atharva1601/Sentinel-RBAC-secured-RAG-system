@@ -1,7 +1,10 @@
 from typing import List, Dict
 
-HARD_THRESHOLD = 0.50
-SOFT_THRESHOLD = 0.40
+from app.config import settings
+
+import structlog
+
+log = structlog.get_logger()
 
 TOP_N = 4
 MIN_STRONG = 3
@@ -14,6 +17,11 @@ def decision_mode(documents: List[Dict]) -> str:
     Logic:
     - Use top-N similarities (not global average)
     - Strong evidence from multiple chunks beats math noise
+
+    Returns:
+        "answer" — strong single signal above HARD_THRESHOLD
+        "soft_answer" — multiple moderate signals above SOFT_THRESHOLD
+        "no_info" — insufficient relevance
     """
 
     if not documents:
@@ -23,7 +31,9 @@ def decision_mode(documents: List[Dict]) -> str:
 
     for doc in documents:
         try:
-            similarities.append(float(doc.get("similarity", 0)))
+            # Prefer rerank_score if available, otherwise use similarity
+            score = doc.get("rerank_score", doc.get("similarity", 0))
+            similarities.append(float(score))
         except (TypeError, ValueError):
             continue
 
@@ -36,16 +46,18 @@ def decision_mode(documents: List[Dict]) -> str:
     top_similarities = similarities[:TOP_N]
 
     max_similarity = top_similarities[0]
-    strong_count = sum(s >= SOFT_THRESHOLD for s in top_similarities)
+    strong_count = sum(s >= settings.SOFT_THRESHOLD for s in top_similarities)
 
-    print(
-        f"DECISION: top_similarities={top_similarities}, "
-        f"strong_count={strong_count}, "
-        f"HARD={HARD_THRESHOLD}, SOFT={SOFT_THRESHOLD}"
+    log.info(
+        "decision_gate",
+        top_similarities=top_similarities,
+        strong_count=strong_count,
+        hard_threshold=settings.HARD_THRESHOLD,
+        soft_threshold=settings.SOFT_THRESHOLD,
     )
 
     # Strong single signal
-    if max_similarity >= HARD_THRESHOLD:
+    if max_similarity >= settings.HARD_THRESHOLD:
         return "answer"
 
     # Multiple moderate signals

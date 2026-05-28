@@ -1,6 +1,9 @@
 import os
+import structlog
 from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker, declarative_base
+
+log = structlog.get_logger()
 
 BASE_DIR = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
@@ -11,7 +14,7 @@ SQLITE_URL = f"sqlite:///{DB_PATH}"
 
 # Production Postgres (Render)
 DATABASE_URL = os.getenv("DATABASE_URL", SQLITE_URL)
-print(">>> DATABASE_URL seen by app:", os.getenv("DATABASE_URL"))
+log.info("database_url_resolved", url=DATABASE_URL[:40] if DATABASE_URL else "None")
 # Ensure Postgres URLs work with SQLAlchemy
 if DATABASE_URL.startswith("postgres://"):
     DATABASE_URL = DATABASE_URL.replace("postgres://", "postgresql://", 1)

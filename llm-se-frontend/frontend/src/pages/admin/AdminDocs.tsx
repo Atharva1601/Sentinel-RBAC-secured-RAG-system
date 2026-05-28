@@ -7,6 +7,8 @@ interface DocumentRow {
   owner_department: string;
   min_role_level: number;
   min_clearance_level: number;
+  status: string;
+  chunks: number;
 }
 
 interface IngestForm {
@@ -28,6 +30,8 @@ export default function AdminDocs() {
   const [uploading, setUploading] = useState(false);
   const [uploadMsg, setUploadMsg] = useState("");
 
+  const [departments, setDepartments] = useState<string[]>([]);
+
   const [ingestForm, setIngestForm] = useState<IngestForm>({
     pdf_filename: "",
     owner_department: "",
@@ -40,10 +44,10 @@ export default function AdminDocs() {
 
   const token = localStorage.getItem("token") || "";
 
-  /* ================= FETCH DOCUMENTS ================= */
+  /* ================= FETCH DOCUMENTS & DEPARTMENTS ================= */
 
-  const fetchDocuments = useCallback(async () => {
-    setLoading(true);
+  const fetchDocuments = useCallback(async (silent = false) => {
+    if (!silent) setLoading(true);
     setError("");
 
     try {
@@ -63,6 +67,8 @@ export default function AdminDocs() {
           owner_department: meta.owner_department,
           min_role_level: meta.min_role_level,
           min_clearance_level: meta.min_clearance_level,
+          status: meta.status || "ingested",
+          chunks: meta.chunks || 0,
         })
       );
 
@@ -71,13 +77,53 @@ export default function AdminDocs() {
       setError(e.message || "Failed to fetch documents");
       setDocuments([]);
     } finally {
-      setLoading(false);
+      if (!silent) setLoading(false);
+    }
+  }, [token]);
+
+  const fetchDepartments = useCallback(async () => {
+    try {
+      const res = await fetch(`${API_BASE}/admin/departments`, {
+        headers: { Authorization: `Bearer ${token}` },
+      });
+
+      if (!res.ok) throw new Error("Failed to fetch departments");
+
+      const data = await res.json();
+      const names = data.map((d: any) => d.name);
+      setDepartments(names);
+
+      setIngestForm((prev) => {
+        if ((!prev.owner_department || !names.includes(prev.owner_department)) && names.length > 0) {
+          return { ...prev, owner_department: names[0] };
+        }
+        return prev;
+      });
+    } catch (e: any) {
+      console.error(e.message || "Failed to fetch departments");
     }
   }, [token]);
 
   useEffect(() => {
-    if (token) fetchDocuments();
-  }, [fetchDocuments, token]);
+    if (token) {
+      fetchDocuments();
+      fetchDepartments();
+    }
+  }, [fetchDocuments, fetchDepartments, token]);
+
+  // 🔄 Auto-poll database status while any document is 'ingesting'
+  useEffect(() => {
+    if (!token) return;
+
+    const hasIngesting = documents.some((d) => d.status === "ingesting");
+    if (!hasIngesting) return;
+
+    const interval = setInterval(() => {
+      fetchDocuments(true); // silent fetch
+    }, 2500);
+
+    return () => clearInterval(interval);
+  }, [documents, fetchDocuments, token]);
 
   /* ================= UPLOAD ================= */
 
@@ -98,10 +144,21 @@ export default function AdminDocs() {
         body: fd,
       });
 
-      if (!res.ok) throw new Error("Upload failed");
+      if (!res.ok) {
+        const err = await res.json();
+        throw new Error(err.detail || "Upload failed");
+      }
 
-      setUploadMsg(`Uploaded: ${selectedFile.name}`);
+      setUploadMsg(`Uploaded successfully: ${selectedFile.name}`);
+      
+      // Auto-populate filename
+      setIngestForm((prev) => ({
+        ...prev,
+        pdf_filename: selectedFile.name,
+      }));
+
       setSelectedFile(null);
+      fetchDocuments();
     } catch (e: any) {
       setError(e.message);
     } finally {
@@ -133,11 +190,14 @@ export default function AdminDocs() {
         }),
       });
 
-      if (!res.ok) throw new Error("Ingest failed");
+      if (!res.ok) {
+        const err = await res.json();
+        throw new Error(err.detail || "Ingest failed");
+      }
 
       setIngestForm({
         pdf_filename: "",
-        owner_department: "",
+        owner_department: departments[0] || "",
         min_role_level: 1,
         min_clearance_level: 1,
       });
@@ -192,71 +252,100 @@ export default function AdminDocs() {
       {error && <div style={styles.error}>{error}</div>}
       {uploadMsg && <div style={styles.success}>{uploadMsg}</div>}
 
-      {/* UPLOAD */}
-      <div style={styles.form}>
-        <input
-          type="file"
-          accept="application/pdf"
-          style={styles.input}
-          onChange={(e) => setSelectedFile(e.target.files?.[0] || null)}
-        />
-        <button
-          style={styles.primaryBtn}
-          disabled={uploading || !selectedFile}
-          onClick={handleUpload}
-        >
-          Upload PDF
-        </button>
+      {/* UPLOAD PANEL */}
+      <div style={styles.panel}>
+        <h2 style={styles.sectionTitle}>1. Upload PDF Document</h2>
+        <div style={styles.uploadRow}>
+          <input
+            type="file"
+            accept="application/pdf"
+            style={styles.fileInput}
+            onChange={(e) => setSelectedFile(e.target.files?.[0] || null)}
+          />
+          <button
+            style={styles.primaryBtn}
+            disabled={uploading || !selectedFile}
+            onClick={handleUpload}
+          >
+            {uploading ? "Uploading..." : "Upload PDF"}
+          </button>
+        </div>
       </div>
 
-      {/* INGEST */}
-      <form onSubmit={handleIngest} style={styles.form}>
-        <input
-          style={styles.input}
-          placeholder="PDF filename"
-          value={ingestForm.pdf_filename}
-          onChange={(e) =>
-            setIngestForm({ ...ingestForm, pdf_filename: e.target.value })
-          }
-          required
-        />
-        <input
-          style={styles.input}
-          placeholder="Department"
-          value={ingestForm.owner_department}
-          onChange={(e) =>
-            setIngestForm({ ...ingestForm, owner_department: e.target.value })
-          }
-          required
-        />
-        <input
-          style={styles.input}
-          type="number"
-          min={1}
-          value={ingestForm.min_role_level}
-          onChange={(e) =>
-            setIngestForm({
-              ...ingestForm,
-              min_role_level: +e.target.value,
-            })
-          }
-        />
-        <input
-          style={styles.input}
-          type="number"
-          min={1}
-          value={ingestForm.min_clearance_level}
-          onChange={(e) =>
-            setIngestForm({
-              ...ingestForm,
-              min_clearance_level: +e.target.value,
-            })
-          }
-        />
-        <button style={styles.primaryBtn} disabled={ingesting}>
-          Ingest PDF
-        </button>
-      </form>
+      {/* INGEST PANEL */}
+      <div style={styles.panel}>
+        <h2 style={styles.sectionTitle}>2. Ingest uploaded PDF (Embed & Secure)</h2>
+        <form onSubmit={handleIngest} style={styles.form}>
+          <select
+            style={styles.select}
+            value={ingestForm.pdf_filename}
+            onChange={(e) =>
+              setIngestForm({ ...ingestForm, pdf_filename: e.target.value })
+            }
+            required
+          >
+            <option value="">-- Select Uploaded PDF --</option>
+            {documents.map((d) => (
+              <option key={d.source} value={d.source}>
+                {d.source}
+              </option>
+            ))}
+          </select>
+          <select
+            style={styles.select}
+            value={ingestForm.owner_department}
+            onChange={(e) =>
+              setIngestForm({ ...ingestForm, owner_department: e.target.value })
+            }
+            required
+          >
+            {departments.length === 0 ? (
+              <option value="">No departments available</option>
+            ) : (
+              departments.map((dept) => (
+                <option key={dept} value={dept}>
+                  {dept}
+                </option>
+              ))
+            )}
+          </select>
+          <div style={styles.inputWrapper}>
+            <label style={styles.label}>Min Role Level</label>
+            <input
+              style={styles.inputNumber}
+              type="number"
+              min={1}
+              max={3}
+              value={ingestForm.min_role_level}
+              onChange={(e) =>
+                setIngestForm({
+                  ...ingestForm,
+                  min_role_level: +e.target.value,
+                })
+              }
+            />
+          </div>
+          <div style={styles.inputWrapper}>
+            <label style={styles.label}>Min Clearance Level</label>
+            <input
+              style={styles.inputNumber}
+              type="number"
+              min={1}
+              max={3}
+              value={ingestForm.min_clearance_level}
+              onChange={(e) =>
+                setIngestForm({
+                  ...ingestForm,
+                  min_clearance_level: +e.target.value,
+                })
+              }
+            />
+          </div>
+          <button style={styles.successBtn} disabled={ingesting || !ingestForm.pdf_filename}>
+            {ingesting ? "Ingesting (Please wait)..." : "Ingest PDF"}
+          </button>
+        </form>
+      </div>
 
       {/* TABLE */}
       {loading ? (
@@ -270,13 +359,15 @@ export default function AdminDocs() {
                 <th style={styles.th}>Department</th>
                 <th style={styles.th}>Role</th>
                 <th style={styles.th}>Clearance</th>
+                <th style={styles.th}>Status</th>
+                <th style={styles.th}>Chunks</th>
                 <th style={styles.th}>Actions</th>
               </tr>
             </thead>
             <tbody>
               {documents.length === 0 ? (
                 <tr>
-                  <td colSpan={5} style={styles.empty}>
+                  <td colSpan={7} style={styles.empty}>
                     No documents found
                   </td>
                 </tr>
@@ -287,6 +378,12 @@ export default function AdminDocs() {
                     <td style={styles.td}>{d.owner_department}</td>
                     <td style={styles.td}>{d.min_role_level}</td>
                     <td style={styles.td}>{d.min_clearance_level}</td>
+                    <td style={styles.td}>
+                      <span style={getStatusBadgeStyle(d.status)}>
+                        {d.status}
+                      </span>
+                    </td>
+                    <td style={styles.td}>{d.chunks}</td>
                     <td style={styles.td}>
                       <button
                         style={styles.deleteBtn}
@@ -307,96 +404,221 @@ export default function AdminDocs() {
   );
 }
 
-/* ================= STYLES (MATCH ADMIN USERS) ================= */
+/* ================= BADGE HELPER ================= */
+
+const getStatusBadgeStyle = (status: string): React.CSSProperties => {
+  let color = "#e2e8f0";
+  let bg = "#334155";
+  
+  if (status === "uploaded") {
+    color = "#38bdf8";
+    bg = "rgba(56, 189, 248, 0.15)";
+  } else if (status === "ingesting") {
+    color = "#f59e0b";
+    bg = "rgba(245, 158, 11, 0.15)";
+  } else if (status === "ingested") {
+    color = "#10b981";
+    bg = "rgba(16, 185, 129, 0.15)";
+  } else if (status === "failed") {
+    color = "#ef4444";
+    bg = "rgba(239, 68, 68, 0.15)";
+  }
+
+  return {
+    color,
+    background: bg,
+    padding: "0.25rem 0.5rem",
+    borderRadius: 6,
+    fontSize: "0.75rem",
+    fontWeight: 600,
+    textTransform: "uppercase",
+    border: `1px solid ${color}`,
+    display: "inline-block",
+  };
+};
+
+/* ================= STYLES ================= */
 
 const styles: Record<string, React.CSSProperties> = {
   container: {
     minHeight: "100vh",
     padding: "2rem",
-    background: "#0f1115",
-    color: "#e5e7eb",
+    background: "#0f172a",
+    color: "#e2e8f0",
+    fontFamily: "'Inter', sans-serif",
   },
   topBar: {
     display: "flex",
     alignItems: "center",
     gap: "1rem",
-    marginBottom: "1.5rem",
+    marginBottom: "2rem",
   },
   backBtn: {
     background: "transparent",
-    color: "#93c5fd",
-    border: "1px solid #374151",
-    padding: "0.35rem 0.75rem",
-    borderRadius: 4,
+    color: "#38bdf8",
+    border: "1px solid #334155",
+    padding: "0.5rem 1rem",
+    borderRadius: 6,
     cursor: "pointer",
+    transition: "all 0.2s",
   },
-  title: { fontSize: "1.75rem" },
+  title: {
+    fontSize: "1.75rem",
+    fontWeight: 600,
+    color: "#f8fafc",
+  },
   error: {
     background: "rgba(239,68,68,.15)",
     border: "1px solid rgba(239,68,68,.3)",
     padding: "0.75rem",
-    marginBottom: "1rem",
+    borderRadius: 6,
+    marginBottom: "1.5rem",
+    color: "#fca5a5",
   },
   success: {
-    background: "rgba(59,130,246,.15)",
-    border: "1px solid rgba(59,130,246,.3)",
+    background: "rgba(16,185,129,.15)",
+    border: "1px solid rgba(16,185,129,.3)",
     padding: "0.75rem",
+    borderRadius: 6,
+    marginBottom: "1.5rem",
+    color: "#a7f3d0",
+  },
+  panel: {
+    background: "#1e293b",
+    padding: "1.5rem",
+    borderRadius: 8,
+    marginBottom: "1.5rem",
+    border: "1px solid #334155",
+    boxShadow: "0 4px 6px -1px rgba(0, 0, 0, 0.1), 0 2px 4px -1px rgba(0, 0, 0, 0.06)",
+  },
+  sectionTitle: {
+    fontSize: "1.25rem",
+    fontWeight: 500,
     marginBottom: "1rem",
+    color: "#f1f5f9",
+  },
+  uploadRow: {
+    display: "flex",
+    gap: "1rem",
+    alignItems: "center",
+    maxWidth: "600px",
+  },
+  fileInput: {
+    background: "#0f172a",
+    border: "1px solid #334155",
+    color: "#e2e8f0",
+    padding: "0.5rem",
+    borderRadius: 6,
+    outline: "none",
+    flex: 1,
   },
   form: {
     display: "grid",
-    gridTemplateColumns: "repeat(auto-fit,minmax(150px,1fr))",
-    gap: "0.75rem",
-    marginBottom: "1.5rem",
+    gridTemplateColumns: "repeat(auto-fit,minmax(180px,1fr))",
+    gap: "1rem",
+    alignItems: "end",
   },
   input: {
-    background: "#111827",
-    border: "1px solid #374151",
-    color: "#e5e7eb",
-    padding: "0.5rem",
-    borderRadius: 4,
+    background: "#0f172a",
+    border: "1px solid #334155",
+    color: "#e2e8f0",
+    padding: "0.625rem",
+    borderRadius: 6,
+    outline: "none",
+    width: "100%",
   },
-  primaryBtn: {
-    background: "#2563eb",
-    color: "#fff",
-    border: "none",
-    borderRadius: 4,
-    padding: "0.5rem",
+  inputNumber: {
+    background: "#0f172a",
+    border: "1px solid #334155",
+    color: "#e2e8f0",
+    padding: "0.625rem",
+    borderRadius: 6,
+    outline: "none",
+    width: "100%",
+  },
+  select: {
+    background: "#0f172a",
+    border: "1px solid #334155",
+    color: "#e2e8f0",
+    padding: "0.625rem",
+    borderRadius: 6,
+    outline: "none",
+    width: "100%",
     cursor: "pointer",
   },
-  tableWrapper: {
-    border: "1px solid #374151",
+  inputWrapper: {
+    display: "flex",
+    flexDirection: "column",
+    gap: "0.35rem",
+  },
+  label: {
+    fontSize: "0.75rem",
+    color: "#94a3b8",
+  },
+  primaryBtn: {
+    background: "#0284c7",
+    color: "#fff",
+    border: "none",
     borderRadius: 6,
+    padding: "0.625rem 1.25rem",
+    cursor: "pointer",
+    fontWeight: 500,
+    whiteSpace: "nowrap",
+    transition: "background 0.2s",
+  },
+  successBtn: {
+    background: "#059669",
+    color: "#fff",
+    border: "none",
+    borderRadius: 6,
+    padding: "0.625rem 1.25rem",
+    cursor: "pointer",
+    fontWeight: 500,
+    whiteSpace: "nowrap",
+    transition: "background 0.2s",
+  },
+  tableWrapper: {
+    border: "1px solid #334155",
+    borderRadius: 8,
     overflow: "hidden",
+    boxShadow: "0 4px 6px -1px rgba(0, 0, 0, 0.1)",
   },
   table: {
     width: "100%",
     borderCollapse: "collapse",
-    background: "#020617",
+    background: "#0f172a",
   },
   th: {
-    padding: "10px",
-    fontSize: "0.75rem",
-    textTransform: "uppercase",
-    color: "#9ca3af",
-    borderBottom: "1px solid #374151",
     textAlign: "left",
+    padding: "12px 16px",
+    fontSize: "0.75rem",
+    fontWeight: 600,
+    textTransform: "uppercase",
+    color: "#94a3b8",
+    borderBottom: "1px solid #334155",
+    background: "#1e293b",
   },
   td: {
-    padding: "10px",
-    borderBottom: "1px solid #1f2937",
+    padding: "12px 16px",
+    borderBottom: "1px solid #1e293b",
+    fontSize: "0.875rem",
+    color: "#cbd5e1",
+    verticalAlign: "middle",
   },
   deleteBtn: {
-    background: "#dc2626",
+    background: "#e11d48",
     color: "#fff",
     border: "none",
-    padding: "0.35rem 0.6rem",
-    borderRadius: 4,
+    padding: "0.35rem 0.75rem",
+    borderRadius: 6,
     cursor: "pointer",
+    fontWeight: 500,
+    transition: "background 0.2s",
   },
   empty: {
     textAlign: "center",
     padding: "1.5rem",
-    color: "#9ca3af",
+    color: "#94a3b8",
   },
 };
+

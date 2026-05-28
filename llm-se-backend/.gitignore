@@ -1,22 +1,56 @@
-.# Secrets
+# ── Secrets ───────────────────────────────────
 .env
+.env.local
+.env.*.local
 
-# Python cache
+# ── Python cache ──────────────────────────────
 __pycache__/
 *.pyc
+*.pyo
+*.pyd
 
-# Runtime data
+# ── Python packaging ──────────────────────────
+*.egg-info/
+*.egg
+dist/
+build/
+pip-log.txt
+
+# ── Virtual environments ──────────────────────
+venv/
+.venv/
+env/
+ENV/
+conda-env/
+
+# ── Testing & type checking ───────────────────
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.coverage
+htmlcov/
+
+# ── Runtime data (never commit) ───────────────
 data/
-
-# Local documents
 samples/
 
-# Frontend (React / Vite)
+# ── Logs ──────────────────────────────────────
+*.log
+logs/
+
+# ── Database files ────────────────────────────
+*.db
+*.sqlite
+*.sqlite3
+
+# ── ML model weights cached locally ──────────
+models/
+sentence_transformers/
+*.bin
+*.pkl
+
+# ── Frontend build artefacts ──────────────────
 node_modules/
 dist/
 build/
 .vite/
-# Environment variables
-.env
-.env.local
-.env.*.local

@@ -3,7 +3,7 @@ from sqlalchemy.orm import Session
 
 from app.auth.authentication import authenticate_user
 from app.db.database import SessionLocal
-from app.db.models import User
+from app.db.models import User, Department
 from app.models.admin_users import UserCreateRequest, UserUpdateRequest
 
 router = APIRouter(prefix="/admin", tags=["admin"])
@@ -47,6 +47,11 @@ def create_user(
         existing = db.query(User).filter(User.username == payload.username).first()
         if existing:
             raise HTTPException(status_code=400, detail="User already exists")
+
+        # Validate department
+        dept_exists = db.query(Department).filter(Department.name == payload.department).first()
+        if not dept_exists:
+            raise HTTPException(status_code=400, detail=f"Department '{payload.department}' does not exist")
 
         new_user = User(
             username=payload.username,
@@ -96,6 +101,10 @@ def update_user(
             target.clearance_level = payload.clearance_level
 
         if payload.department is not None:
+            # Validate department
+            dept_exists = db.query(Department).filter(Department.name == payload.department).first()
+            if not dept_exists:
+                raise HTTPException(status_code=400, detail=f"Department '{payload.department}' does not exist")
             target.department = payload.department
 
         if payload.is_active is not None:
