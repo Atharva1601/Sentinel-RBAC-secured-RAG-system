@@ -188,8 +188,38 @@ cd llm-se-backend
 python -m app.evaluation.eval
 ```
 
-Results are saved to `data/eval_<timestamp>.json`. Metrics scored 1–5 (×20 = percentage):
+Results are saved to `data/eval_<timestamp>.json`. Metrics are scored 1–5 (normalized to 100%):
 - **Faithfulness** — are all claims strictly supported by retrieved context?
 - **Answer Relevance** — does the answer directly address the question?
 - **Context Precision** — how much of the retrieved context was actually useful?
 - **Context Recall** — does retrieved context cover all ground truth facts?
+
+### 📈 Latest Evaluation Benchmarks
+Run against the 13-question golden dataset:
+
+| Metric | Baseline Score | Target Score |
+| :--- | :---: | :---: |
+| **Decision Gate Success** | 100% | 100% |
+| **Answer Relevance** | 93.8% | >95% |
+| **Faithfulness** | 87.7% | >90% |
+| **Context Precision** | 83.1% | >90% |
+| **Context Recall** | **69.2%** | >85% |
+
+---
+
+## 🔮 Future Roadmap (Improving Recall)
+
+The baseline evaluation highlights **Context Recall (69.2%)** as the primary area for optimization. The following improvements are planned:
+
+1. **📷 OCR Integration for Scanned Documents**
+   * Integrate an OCR pipeline (e.g., using `EasyOCR` or `PyMuPDF` with Tesseract) to parse text from scanned PDFs, images, and embedded diagrams which are currently missed by raw text parsers.
+
+2. **📂 Hierarchical / Parent-Child Chunking**
+   * Index smaller chunks (100 tokens) for high-precision vector matches, but retrieve and feed the wider parent chunk (500 tokens) to the LLM to provide richer context and raise recall.
+
+3. **📊 Layout-Aware PDF Parsing**
+   * Move from simple character/token splitting to layout-aware parsing (using `Unstructured` or `Marker`) to preserve tables, headers, and bullet points.
+
+4. **🧠 Dense + Sparse Weights Tuning**
+   * Fine-tune the Reciprocal Rank Fusion (RRF) weights between dense embeddings (`BAAI/bge-small-en-v1.5`) and sparse lexical search (`BM25`) based on evaluation feedback.
+
