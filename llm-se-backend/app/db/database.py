@@ -21,6 +21,7 @@ if DATABASE_URL.startswith("sqlite"):
     db_file_path = DATABASE_URL.replace("sqlite:///", "").replace("sqlite://", "")
     db_dir = os.path.dirname(db_file_path)
     if db_dir and not os.path.exists(db_dir):
+        log.info("creating_database_directory", directory=db_dir)
         os.makedirs(db_dir, exist_ok=True)
 
 # Ensure Postgres URLs work with SQLAlchemy
