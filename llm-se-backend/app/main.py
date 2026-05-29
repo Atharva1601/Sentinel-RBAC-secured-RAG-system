@@ -37,6 +37,7 @@ app.add_middleware(
     CORSMiddleware,
     allow_origins=[
         "http://localhost:5173",
+        "https://sentinel-rbac-secured-rag-system.vercel.app",
         "https://senitel-rbac-secured-rag-system.vercel.app",
     ],
     allow_credentials=True,
