@@ -72,7 +72,13 @@ class Settings(BaseSettings):
 @lru_cache()
 def get_settings() -> Settings:
     """Return a cached singleton Settings instance."""
-    return Settings()
+    s = Settings()
+    # Strip any leading/trailing whitespace or newlines from string fields
+    for field_name in Settings.model_fields:
+        val = getattr(s, field_name)
+        if isinstance(val, str):
+            setattr(s, field_name, val.strip())
+    return s
 
 
 # Convenience alias — import as `from app.config import settings`
