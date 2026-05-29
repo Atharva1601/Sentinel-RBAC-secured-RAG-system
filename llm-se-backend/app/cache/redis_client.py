@@ -10,7 +10,6 @@ import structlog
 
 log = structlog.get_logger()
 
-# ── Lazy Redis client ─────────────────────────────────────────
 _redis_client = None
 _redis_checked = False
 

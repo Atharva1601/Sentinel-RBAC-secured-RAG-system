@@ -1,5 +1,5 @@
 from qdrant_client import QdrantClient, AsyncQdrantClient
-from qdrant_client.models import Distance, VectorParams
+from qdrant_client.models import Distance, VectorParams, PayloadSchemaType
 
 from app.config import settings
 
@@ -65,11 +65,11 @@ def get_collection_name() -> str:
 
 def _ensure_collection() -> None:
     """
-    Create the enterprise_docs collection if it doesn't already exist.
+    Create the enterprise_docs collection if it doesn't already exist,
+    and ensure all payload indexes required for RBAC filtering are present.
 
-    Vector config:
-    - Distance: Cosine (matches Voyage AI's recommended similarity)
-    - Dimension: settings.EMBEDDING_DIMENSION (1024 for voyage-2)
+    Qdrant Cloud (unlike local mode) requires explicit payload indexes on
+    any field used in a filter condition.
     """
     global _client
     assert _client is not None
@@ -96,9 +96,40 @@ def _ensure_collection() -> None:
     else:
         log.info("qdrant_collection_exists", name=collection_name)
 
+    # Create payload indexes required for RBAC filtering (safe to call even if they exist)
+    _ensure_payload_indexes(_client, collection_name)
+
+
+def _ensure_payload_indexes(client: QdrantClient, collection_name: str) -> None:
+    """
+    Create payload indexes for all fields used in RBAC and window-expansion filters.
+
+    Qdrant Cloud enforces that numeric/keyword fields used in filters must be
+    explicitly indexed. These calls are idempotent — safe to run on every startup.
+    """
+    integer_fields = ["min_role_level", "min_clearance_level", "chunk_index"]
+    keyword_fields = ["owner_department", "source"]
+
+    for field in integer_fields:
+        client.create_payload_index(
+            collection_name=collection_name,
+            field_name=field,
+            field_schema=PayloadSchemaType.INTEGER,
+        )
+    for field in keyword_fields:
+        client.create_payload_index(
+            collection_name=collection_name,
+            field_name=field,
+            field_schema=PayloadSchemaType.KEYWORD,
+        )
+    log.info("qdrant_payload_indexes_ensured", collection=collection_name)
+
 
 async def _ensure_collection_async(client: AsyncQdrantClient) -> None:
-    """Create the enterprise_docs collection asynchronously if it doesn't exist."""
+    """
+    Create the enterprise_docs collection asynchronously if it doesn't exist,
+    and ensure all RBAC payload indexes are present.
+    """
     collection_name = settings.QDRANT_COLLECTION_NAME
     collections = (await client.get_collections()).collections
     existing_names = [c.name for c in collections]
@@ -118,6 +149,12 @@ async def _ensure_collection_async(client: AsyncQdrantClient) -> None:
         )
     else:
         log.info("qdrant_async_collection_exists", name=collection_name)
+
+    # Use the sync singleton client to create indexes (idempotent, safe on every startup)
+    import anyio
+    await anyio.to_thread.run_sync(
+        lambda: _ensure_payload_indexes(get_qdrant_client(), collection_name)
+    )
 
 
 async def get_async_qdrant_client() -> AsyncQdrantClient:
