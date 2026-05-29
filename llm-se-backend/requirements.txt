@@ -58,6 +58,7 @@ pybase64==1.4.3
 pydantic==2.12.5
 pydantic_core==2.41.5
 Pygments==2.19.2
+pdfplumber
 pypdf==6.6.0
 PyPika==0.50.0
 pyproject_hooks==1.2.0
