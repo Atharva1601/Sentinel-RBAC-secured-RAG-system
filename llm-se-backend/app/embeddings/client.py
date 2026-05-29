@@ -88,7 +88,7 @@ def embed_batch(texts: List[str]) -> List[List[float]]:
     # BGE documents/passages do NOT get any prefix
     embeddings = model.encode(
         texts,
-        batch_size=64,             # process 64 at a time — balances speed vs RAM
+        batch_size=8,              # reduced from 64 to 8 to prevent RAM spikes (OOM) on Railway
         normalize_embeddings=True, # cosine similarity works correctly
         show_progress_bar=False,
         convert_to_numpy=True,

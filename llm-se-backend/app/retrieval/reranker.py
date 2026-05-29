@@ -71,7 +71,8 @@ def rerank(
     pairs = [[query, doc["content"]] for doc in documents]
 
     # Score all pairs at once (batched inference)
-    scores = model.predict(pairs)
+    # Using a small batch size (e.g. 4) prevents RAM spikes and OOM on Railway Free Tier
+    scores = model.predict(pairs, batch_size=4)
 
     # Attach scores (mapped with sigmoid to [0,1]) and sort
     for doc, score in zip(documents, scores):
